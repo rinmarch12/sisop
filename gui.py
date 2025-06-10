@@ -340,8 +340,7 @@ class FileManagerGUI:
             if not args:
                 self.write_terminal("rm: missing operand", 'error')
             else:
-                self.fs.rm(args[0])
-                self.write_terminal(f"File '{args[0]}' removed", 'success')
+                self.handle_rm_command(args)
         elif cmd == 'cd':
             path = args[0] if args else '/'
             self.fs.cd(path)
@@ -377,6 +376,54 @@ class FileManagerGUI:
         else:
             self.write_terminal(f"Command '{cmd}' not found. Type 'help' for available commands.", 'error')
     
+    def handle_rm_command(self, args: List[str]):
+        """Handle rm command with different options"""
+        if not args:
+            self.write_terminal("rm: missing operand", 'error')
+            return
+        
+        # Check for options
+        recursive = False
+        force = False
+        files_to_remove = []
+        
+        for arg in args:
+            if arg.startswith('-'):
+                if 'r' in arg or 'R' in arg:
+                    recursive = True
+                if 'f' in arg:
+                    force = True
+            else:
+                files_to_remove.append(arg)
+        
+        if not files_to_remove:
+            self.write_terminal("rm: missing file operand", 'error')
+            return
+        
+        # Process each file/directory
+        for filename in files_to_remove:
+            try:
+                if recursive:
+                    # Use rm_recursive for directories
+                    success = self.fs.rm_recursive(filename, force)
+                    if success:
+                        self.write_terminal(f"'{filename}' removed recursively", 'success')
+                else:
+                    # Use regular rm for files only
+                    self.fs.rm(filename)
+                    self.write_terminal(f"File '{filename}' removed", 'success')
+                    
+            except FileNotFoundError as e:
+                if not force:
+                    self.write_terminal(f"rm: {str(e)}", 'error')
+            except IsADirectoryError as e:
+                self.write_terminal(f"rm: {str(e)}", 'error')
+                self.write_terminal("Hint: Use 'rm -r' to remove directories", 'warning')
+            except OSError as e:
+                self.write_terminal(f"rm: {str(e)}", 'error')
+            except Exception as e:
+                self.write_terminal(f"rm: {str(e)}", 'error')
+    
     def show_help(self):
         """Show help information"""
         help_text = """
@@ -385,6 +432,9 @@ Available Commands:
 File Operations:
   touch <filename>     - Create a new file or update timestamp
   rm <filename>        - Remove a file
+  rm -r <name>         - Remove file or directory recursively
+  rm -rf <name>        - Remove file or directory recursively (force)
+  rm -f <filename>     - Remove file forcefully (no error if not exists)
   cp <source> <dest>   - Copy file or directory
   mv <source> <dest>   - Move/rename file or directory
 
@@ -411,7 +461,10 @@ Examples:
   mkdir documents
   cd documents
   touch readme.txt
+  mkdir subfolder
+  touch subfolder/file.txt
   ls
+  rm -r subfolder
   cd ..
   tree
         """

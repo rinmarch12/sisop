@@ -78,25 +78,6 @@ class FileSystem:
         self.current_directory = self.root
         self.total_storage = total_storage  # MB
         self.command_history = []
-        # Hapus inisialisasi default structure agar dimulai dengan sistem kosong
-        # self._initialize_default_structure()
-    
-    def _initialize_default_structure(self):
-        """Inisialisasi struktur direktori default (TIDAK DIGUNAKAN LAGI)"""
-        # Method ini dibiarkan untuk referensi tapi tidak dipanggil
-        # Buat beberapa direktori dan file default
-        self.mkdir('home')
-        self.mkdir('var')
-        self.mkdir('tmp')
-        
-        # Pindah ke home dan buat beberapa file
-        self.cd('home')
-        self.touch('document.txt')
-        self.touch('readme.md')
-        self.mkdir('downloads')
-        
-        # Kembali ke root
-        self.cd('/')
     
     def get_used_storage(self) -> int:
         """Mendapatkan storage yang sudah digunakan"""
@@ -207,6 +188,56 @@ class FileSystem:
         self.command_history.append(f"rmdir {name}")
         return True
     
+    def rm_recursive(self, name: str, force: bool = False) -> bool:
+        """Menghapus file atau direktori secara recursive"""
+        if not name:
+            raise ValueError("Nama file/direktori diperlukan")
+        
+        target = self.current_directory.get_child(name)
+        if not target:
+            if force:
+                return True  # Dengan -f, tidak error jika file tidak ada
+            raise FileNotFoundError(f"'{name}' tidak ditemukan")
+        
+        # Jika ini adalah file, hapus langsung
+        if target.type == 'file':
+            self.current_directory.remove_child(name)
+            self.command_history.append(f"rm {'-rf' if force else '-r'} {name}")
+            return True
+        
+        # Jika ini adalah direktori, hapus secara recursive
+        if target.type == 'directory':
+            # Hapus semua children secara recursive
+            children_names = list(target.children.keys())
+            for child_name in children_names:
+                child = target.get_child(child_name)
+                if child.type == 'directory':
+                    # Recursive call untuk subdirektori
+                    self._remove_directory_recursive(child)
+                else:
+                    # Hapus file
+                    target.remove_child(child_name)
+            
+            # Setelah semua children dihapus, hapus direktori itu sendiri
+            self.current_directory.remove_child(name)
+            self.command_history.append(f"rm {'-rf' if force else '-r'} {name}")
+            return True
+        
+        return False
+    
+    def _remove_directory_recursive(self, directory: FileSystemNode) -> None:
+        """Helper function untuk menghapus direktori secara recursive"""
+        # Hapus semua children terlebih dahulu
+        children_names = list(directory.children.keys())
+        for child_name in children_names:
+            child = directory.get_child(child_name)
+            if child.type == 'directory':
+                # Recursive call untuk subdirektori
+                self._remove_directory_recursive(child)
+            else:
+                # Hapus file
+                directory.remove_child(child_name)
+    
     def touch(self, name: str) -> bool:
         """Membuat file baru"""
         if not name or '/' in name:
@@ -233,7 +264,7 @@ class FileSystem:
             raise FileNotFoundError(f"File '{name}' tidak ditemukan")
         
         if target.type != 'file':
-            raise IsADirectoryError(f"'{name}' adalah direktori. Gunakan rmdir")
+            raise IsADirectoryError(f"'{name}' adalah direktori. Gunakan rmdir atau rm -r")
         
         self.current_directory.remove_child(name)
         self.command_history.append(f"rm {name}")
