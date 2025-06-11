@@ -1,6 +1,6 @@
 """
-GUI Interface untuk File System Simulator
-Menggunakan Tkinter untuk antarmuka grafis
+GUI Interface untuk File System Simulator dengan Visualisasi Memory Allocation
+Menggunakan Tkinter untuk antarmuka grafis dengan tampilan blok memori
 """
 
 import tkinter as tk
@@ -8,653 +8,559 @@ from tkinter import ttk, messagebox, scrolledtext
 from tkinter import font as tkFont
 import threading
 from typing import List, Dict, Optional
-from filesystem import FileSystem
+from filesystem_modified import FileSystem
+import math
 
-class FileManagerGUI:
-    """Main GUI class untuk File Manager"""
+class MemoryVisualization:
+    """Widget untuk visualisasi memori"""
     
-    def __init__(self, file_system: FileSystem):
-        self.fs = file_system
-        self.root = tk.Tk()
-        self.setup_window()
+    def __init__(self, parent, memory_manager):
+        self.parent = parent
+        self.memory_manager = memory_manager
+        self.canvas_width = 800
+        self.canvas_height = 400
+        self.block_width = 8
+        self.block_height = 20
+        self.blocks_per_row = self.canvas_width // (self.block_width + 1)
+        
         self.create_widgets()
-        self.update_display()
-        
-    def setup_window(self):
-        """Setup main window properties"""
-        self.root.title("🖥️ Simulator Sistem Manajemen File")
-        self.root.geometry("1400x900")
-        self.root.minsize(1200, 700)
-        
-        # Set colors and theme
-        self.colors = {
-            'bg_primary': '#2c3e50',
-            'bg_secondary': '#34495e',
-            'accent': '#3498db',
-            'success': '#27ae60',
-            'warning': '#f39c12',
-            'danger': '#e74c3c',
-            'text': '#ecf0f1',
-            'text_secondary': '#bdc3c7'
-        }
-        
-        self.root.configure(bg=self.colors['bg_primary'])
-        
-        # Configure styles
-        self.style = ttk.Style()
-        self.style.theme_use('clam')
-        self.configure_styles()
-    
-    def configure_styles(self):
-        """Configure custom styles"""
-        # Frame styles
-        self.style.configure('Primary.TFrame', background=self.colors['bg_primary'])
-        self.style.configure('Secondary.TFrame', background=self.colors['bg_secondary'])
-        
-        # Label styles
-        self.style.configure('Title.TLabel', 
-                           background=self.colors['bg_primary'],
-                           foreground=self.colors['text'],
-                           font=('Arial', 16, 'bold'))
-        
-        self.style.configure('Info.TLabel',
-                           background=self.colors['bg_secondary'],
-                           foreground=self.colors['text'],
-                           font=('Arial', 10))
-        
-        # Button styles
-        self.style.configure('Action.TButton',
-                           font=('Arial', 10, 'bold'))
-        
-        # Treeview styles
-        self.style.configure('Custom.Treeview',
-                           background='#34495e',
-                           foreground='#ecf0f1',
-                           fieldbackground='#34495e',
-                           font=('Courier New', 10))
-        
-        self.style.configure('Custom.Treeview.Heading',
-                           background='#2c3e50',
-                           foreground='#ecf0f1',
-                           font=('Arial', 10, 'bold'))
     
     def create_widgets(self):
-        """Create all GUI widgets"""
-        # Main container
-        main_frame = ttk.Frame(self.root, style='Primary.TFrame')
-        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        """Buat widget visualisasi"""
+        # Frame untuk visualisasi
+        viz_frame = ttk.LabelFrame(self.parent, text="🧠 Visualisasi Memori (First Fit Algorithm)")
+        viz_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
-        # Header
-        self.create_header(main_frame)
-        
-        # Content area
-        content_frame = ttk.Frame(main_frame, style='Primary.TFrame')
-        content_frame.pack(fill='both', expand=True, pady=10)
-        
-        # Left panel (Terminal)
-        left_frame = ttk.Frame(content_frame, style='Secondary.TFrame')
-        left_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
-        self.create_terminal_section(left_frame)
-        
-        # Right panel (Info & Tree)
-        right_frame = ttk.Frame(content_frame, style='Secondary.TFrame')
-        right_frame.pack(side='right', fill='both', padx=(5, 0))
-        self.create_info_section(right_frame)
-    
-    def create_header(self, parent):
-        """Create header section"""
-        header_frame = ttk.Frame(parent, style='Primary.TFrame')
-        header_frame.pack(fill='x', pady=(0, 10))
-        
-        # Title
-        title_label = ttk.Label(header_frame, 
-                               text="Simulator Sistem Manajemen File",
-                               style='Title.TLabel')
-        title_label.pack()
-    
-    def create_terminal_section(self, parent):
-        """Create terminal section"""
-        # Terminal header
-        terminal_header = ttk.Frame(parent, style='Secondary.TFrame')
-        terminal_header.pack(fill='x', padx=10, pady=10)
-        
-        terminal_title = ttk.Label(terminal_header,
-                                 text="Terminal",
-                                 style='Info.TLabel',
-                                 font=('Arial', 12, 'bold'))
-        terminal_title.pack(anchor='w')
-        
-        # Terminal output
-        terminal_frame = ttk.Frame(parent, style='Secondary.TFrame')
-        terminal_frame.pack(fill='both', expand=True, padx=10, pady=(0, 10))
-        
-        self.terminal_output = scrolledtext.ScrolledText(
-            terminal_frame,
-            wrap=tk.WORD,
-            width=80,
-            height=25,
-            bg='#000000',
-            fg='#00ff00',
-            font=('Courier New', 10),
-            insertbackground='#00ff00'
+        # Canvas untuk gambar memori
+        self.canvas = tk.Canvas(
+            viz_frame,
+            width=self.canvas_width,
+            height=self.canvas_height,
+            bg='#2c3e50',
+            highlightthickness=0
         )
-        self.terminal_output.pack(fill='both', expand=True)
+        self.canvas.pack(side='top', padx=10, pady=10)
         
-        # Command input
-        cmd_frame = ttk.Frame(parent, style='Secondary.TFrame')
-        cmd_frame.pack(fill='x', padx=10, pady=(0, 10))
+        # Legend frame
+        legend_frame = ttk.Frame(viz_frame)
+        legend_frame.pack(fill='x', padx=10, pady=5)
         
-        self.prompt_label = ttk.Label(cmd_frame,
-                                    text="root@simulator:/$ ",
-                                    foreground='#00ff00',
-                                    background='#000000',
-                                    font=('Courier New', 10, 'bold'))
-        self.prompt_label.pack(side='left')
+        # Legend items
+        legend_items = [
+            ("🟩", "#27ae60", "Blok Kosong"),
+            ("🟥", "#e74c3c", "Blok Terisi"),
+            ("⬜", "#bdc3c7", "Fragmentasi"),
+        ]
         
-        self.command_entry = tk.Entry(
-            cmd_frame,
-            bg='#000000',
-            fg='#00ff00',
-            font=('Courier New', 10),
-            insertbackground='#00ff00',
-            relief='flat'
-        )
-        self.command_entry.pack(side='left', fill='x', expand=True, padx=(5, 10))
-        self.command_entry.bind('<Return>', self.execute_command)
-        self.command_entry.focus()
+        for i, (emoji, color, label) in enumerate(legend_items):
+            ttk.Label(legend_frame, text=emoji, font=("Arial", 12)).grid(row=0, column=i*3, padx=5)
+            color_box = tk.Canvas(legend_frame, width=15, height=15, bg=color, highlightthickness=0)
+            color_box.grid(row=0, column=i*3+1, padx=2)
+            ttk.Label(legend_frame, text=label).grid(row=0, column=i*3+2, padx=5)
         
-        # Control buttons
-        btn_frame = ttk.Frame(parent, style='Secondary.TFrame')
-        btn_frame.pack(fill='x', padx=10, pady=(0, 10))
+        # Statistik memori
+        stats_frame = ttk.LabelFrame(viz_frame, text="📊 Statistik Memori")
+        stats_frame.pack(fill='x', padx=10, pady=5)
         
-        ttk.Button(btn_frame, text="Execute", 
-                  command=self.execute_command, 
-                  style='Action.TButton').pack(side='left', padx=(0, 5))
-        
-        ttk.Button(btn_frame, text="Clear", 
-                  command=self.clear_terminal,
-                  style='Action.TButton').pack(side='left', padx=5)
-        
-        ttk.Button(btn_frame, text="Reset System", 
-                  command=self.reset_system,
-                  style='Action.TButton').pack(side='left', padx=5)
-        
-        # Initialize terminal
-        self.write_terminal("Sistem File Simulator v1.0", "success")
-        self.write_terminal("Selamat datang! Sistem dimulai dengan direktori kosong.", "success")
-        self.write_terminal("Ketik 'help' untuk melihat daftar perintah.", "success")
-        self.write_terminal(f"Direktori saat ini: {self.fs.get_current_path()}")
-        self.write_terminal("Memori yang digunakan: 0 MB", "info")
-        self.write_terminal("=" * 60)
-    
-    def create_info_section(self, parent):
-        """Create information section"""
-        parent.configure(style='Secondary.TFrame')
-        
-        # System info
-        sys_frame = ttk.LabelFrame(parent, text="📊 Informasi Sistem", 
-                                  style='Secondary.TFrame')
-        sys_frame.pack(fill='x', padx=10, pady=10)
-        
-        self.sys_info_frame = ttk.Frame(sys_frame, style='Secondary.TFrame')
-        self.sys_info_frame.pack(fill='x', padx=10, pady=10)
-        
-        # File list
-        files_frame = ttk.LabelFrame(parent, text="📁 Isi Direktori Saat Ini",
-                                   style='Secondary.TFrame')
-        files_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        # Treeview for files
-        columns = ('Name', 'Type', 'Size', 'Modified')
-        self.file_tree = ttk.Treeview(files_frame, columns=columns, 
-                                     show='tree headings', style='Custom.Treeview')
-        
-        # Configure columns
-        self.file_tree.heading('#0', text='', anchor='w')
-        self.file_tree.column('#0', width=30, minwidth=30)
-        
-        for col in columns:
-            self.file_tree.heading(col, text=col, anchor='w')
-            if col == 'Name':
-                self.file_tree.column(col, width=150, minwidth=100)
-            elif col == 'Type':
-                self.file_tree.column(col, width=80, minwidth=60)
-            elif col == 'Size':
-                self.file_tree.column(col, width=80, minwidth=60)
-            else:  # Modified
-                self.file_tree.column(col, width=120, minwidth=100)
-        
-        # Scrollbar for treeview
-        tree_scroll = ttk.Scrollbar(files_frame, orient='vertical', 
-                                   command=self.file_tree.yview)
-        self.file_tree.configure(yscrollcommand=tree_scroll.set)
-        
-        self.file_tree.pack(side='left', fill='both', expand=True)
-        tree_scroll.pack(side='right', fill='y')
-        
-        # Directory tree
-        tree_frame = ttk.LabelFrame(parent, text="🌳 Struktur Direktori",
-                                  style='Secondary.TFrame')
-        tree_frame.pack(fill='both', expand=True, padx=10, pady=10)
-        
-        self.dir_tree_text = scrolledtext.ScrolledText(
-            tree_frame,
-            wrap=tk.NONE,
-            width=40,
-            height=15,
-            bg='#34495e',
-            fg='#ecf0f1',
-            font=('Courier New', 9)
-        )
-        self.dir_tree_text.pack(fill='both', expand=True, padx=5, pady=5)
-    
-    def write_terminal(self, text: str, msg_type: str = "normal"):
-        """Write text to terminal with color coding"""
-        colors = {
-            'normal': '#ecf0f1',
-            'success': '#27ae60',
-            'error': '#e74c3c',
-            'warning': '#f39c12',
-            'info': '#3498db'
+        # Status memori: Total, used, free, fragmentation
+        self.memory_status = {
+            'total': tk.StringVar(value="Total: 0 MB"),
+            'used': tk.StringVar(value="Terpakai: 0 MB"),
+            'free': tk.StringVar(value="Kosong: 0 MB"),
+            'fragmentation': tk.StringVar(value="Fragmentasi: 0%"),
+            'segments': tk.StringVar(value="Segmen Kosong: 0"),
         }
         
-        self.terminal_output.configure(state='normal')
+        status_frame = ttk.Frame(stats_frame)
+        status_frame.pack(fill='x', padx=5, pady=5)
         
-        # Add timestamp for commands
-        if msg_type == 'command':
-            self.terminal_output.insert(tk.END, f"{self.prompt_label.cget('text')}{text}\n", 'command')
+        # First column
+        ttk.Label(status_frame, textvariable=self.memory_status['total']).grid(row=0, column=0, padx=5, sticky='w')
+        ttk.Label(status_frame, textvariable=self.memory_status['used']).grid(row=1, column=0, padx=5, sticky='w')
+        
+        # Second column
+        ttk.Label(status_frame, textvariable=self.memory_status['free']).grid(row=0, column=1, padx=5, sticky='w')
+        ttk.Label(status_frame, textvariable=self.memory_status['fragmentation']).grid(row=1, column=1, padx=5, sticky='w')
+        
+        # Third column
+        ttk.Label(status_frame, textvariable=self.memory_status['segments']).grid(row=0, column=2, padx=5, sticky='w')
+        
+    def update_visualization(self):
+        """Update visualisasi blok memori"""
+        self.canvas.delete('all')
+        
+        # Dapatkan peta memori
+        memory_map = self.memory_manager.get_memory_map()
+        memory_status = self.memory_manager.get_memory_status()
+        
+        # Update statistik
+        self.memory_status['total'].set(f"Total: {memory_status['total_size_mb']} MB")
+        self.memory_status['used'].set(f"Terpakai: {memory_status['used_size_mb']} MB")
+        self.memory_status['free'].set(f"Kosong: {memory_status['free_size_mb']} MB")
+        self.memory_status['fragmentation'].set(f"Fragmentasi: {memory_status['fragmentation_percentage']:.1f}%")
+        self.memory_status['segments'].set(f"Segmen Kosong: {memory_status['number_of_free_segments']}")
+        
+        # Hitung total blocks untuk visualisasi
+        total_blocks = self.memory_manager.total_blocks
+        
+        # Hitung baris dan kolom
+        cols = self.blocks_per_row
+        rows = math.ceil(total_blocks / cols)
+        
+        # Gambar setiap blok
+        for block in memory_map:
+            start_block = block['start_address']
+            end_block = start_block + block['size'] - 1
+            
+            for b in range(start_block, end_block + 1):
+                row = b // cols
+                col = b % cols
+                
+                x1 = col * (self.block_width + 1)
+                y1 = row * (self.block_height + 1)
+                x2 = x1 + self.block_width
+                y2 = y1 + self.block_height
+                
+                # Warna berdasarkan status blok
+                if block['is_free']:
+                    color = "#27ae60"  # Hijau untuk blok kosong
+                else:
+                    color = "#e74c3c"  # Merah untuk blok terisi
+                    
+                    # Jika ini adalah blok pertama, tambahkan label
+                    if b == start_block:
+                        # Potong nama file jika terlalu panjang
+                        short_name = block['file_name']
+                        if len(short_name) > 8:
+                            short_name = short_name[:7] + "…"
+                            
+                        # Label untuk nama file
+                        self.canvas.create_text(
+                            x1 + self.block_width/2,
+                            y1 + self.block_height/2,
+                            text=short_name,
+                            fill="#ffffff",
+                            font=("Arial", 7),
+                            anchor="center"
+                        )
+                
+                # Gambar blok
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+                
+                # Tambahkan detail tooltip
+                self.canvas.tag_bind(
+                    self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline=""),
+                    '<Enter>',
+                    lambda e, b=block: self._show_block_tooltip(e, b)
+                )
+                self.canvas.tag_bind(
+                    self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline=""),
+                    '<Leave>',
+                    self._hide_tooltip
+                )
+        
+        # Tambahkan visualisasi fragmentasi eksternal
+        if memory_status['external_fragmentation_mb'] > 0:
+            # Gambar indikator fragmentasi di bawah blok memori
+            frag_height = 10
+            frag_width = self.canvas_width * (memory_status['external_fragmentation_mb'] / memory_status['total_size_mb'])
+            
+            # Posisi di bawah visualisasi blok
+            frag_y = (rows + 1) * (self.block_height + 1)
+            
+            # Gambar bar fragmentasi
+            self.canvas.create_rectangle(
+                0, frag_y, 
+                frag_width, frag_y + frag_height,
+                fill="#bdc3c7",
+                outline=""
+            )
+            
+            # Label fragmentasi
+            self.canvas.create_text(
+                frag_width / 2,
+                frag_y + frag_height / 2,
+                text=f"Fragmentasi: {memory_status['external_fragmentation_mb']} MB",
+                fill="#2c3e50",
+                font=("Arial", 8)
+            )
+    
+    def _show_block_tooltip(self, event, block):
+        """Menampilkan tooltip saat mouse hover di blok"""
+        x, y = event.x, event.y
+        
+        # Buat tooltip frame
+        self.tooltip = tk.Toplevel(self.canvas)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.geometry(f"+{x + 10}+{y + 10}")
+        
+        # Isi tooltip
+        tooltip_frame = ttk.Frame(self.tooltip, relief="solid", borderwidth=1)
+        tooltip_frame.pack(fill="both", expand=True)
+        
+        if block['is_free']:
+            ttk.Label(tooltip_frame, text=f"Blok Kosong").pack(padx=5, pady=2)
+            ttk.Label(tooltip_frame, text=f"Alamat: {block['start_address']}").pack(padx=5, pady=2)
+            ttk.Label(tooltip_frame, text=f"Ukuran: {block['size'] * self.memory_manager.block_size} MB").pack(padx=5, pady=2)
         else:
-            self.terminal_output.insert(tk.END, f"{text}\n")
+            ttk.Label(tooltip_frame, text=f"File: {block['file_name']}").pack(padx=5, pady=2)
+            ttk.Label(tooltip_frame, text=f"Alamat: {block['start_address']}").pack(padx=5, pady=2)
+            ttk.Label(tooltip_frame, text=f"Ukuran: {block['size'] * self.memory_manager.block_size} MB").pack(padx=5, pady=2)
+            if 'allocation_time' in block and block['allocation_time']:
+                ttk.Label(tooltip_frame, text=f"Dialokasikan: {block['allocation_time'].strftime('%H:%M:%S')}").pack(padx=5, pady=2)
+    
+    def _hide_tooltip(self, event):
+        """Sembunyikan tooltip"""
+        if hasattr(self, 'tooltip'):
+            self.tooltip.destroy()
+
+class FileSystemGUI:
+    """GUI untuk File System Simulator"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("File System Simulator - First Fit Memory Allocation")
+        self.root.geometry("1200x800")
+        self.root.configure(bg="#ecf0f1")
         
-        # Configure tags for colors
-        for tag, color in colors.items():
-            self.terminal_output.tag_configure(tag, foreground=color)
+        # Set font
+        self.default_font = tkFont.Font(family="Arial", size=10)
+        self.mono_font = tkFont.Font(family="Courier", size=10)
         
-        if msg_type in colors:
-            # Get the last line and apply color
-            lines = self.terminal_output.get('1.0', tk.END).strip().split('\n')
-            if lines:
-                last_line_start = f"{len(lines)}.0"
-                last_line_end = f"{len(lines)}.end"
-                self.terminal_output.tag_add(msg_type, last_line_start, last_line_end)
+        # Create file system instance
+        self.fs = FileSystem(total_storage=1024, block_size=4)
         
-        self.terminal_output.configure(state='disabled')
-        self.terminal_output.see(tk.END)
+        # Create UI
+        self.create_menu()
+        self.create_widgets()
+        
+        # Initial refresh
+        self.refresh_ui()
+    
+    def create_menu(self):
+        """Create menu bar"""
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Reset File System", command=self.reset_file_system)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # View menu
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(label="Refresh", command=self.refresh_ui)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self.show_about)
+    
+    def create_widgets(self):
+        """Create main UI widgets"""
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding=(10, 5))
+        main_frame.pack(fill='both', expand=True)
+        
+        # Create paned window
+        main_paned = ttk.PanedWindow(main_frame, orient='horizontal')
+        main_paned.pack(fill='both', expand=True)
+        
+        # Left frame - File Explorer & Commands
+        left_frame = ttk.Frame(main_paned, width=400)
+        main_paned.add(left_frame, weight=1)
+        
+        # Right frame - Memory Visualization
+        right_frame = ttk.Frame(main_paned, width=800)
+        main_paned.add(right_frame, weight=2)
+        
+        # Setup left frame
+        self.setup_left_frame(left_frame)
+        
+        # Setup memory visualization
+        self.memory_viz = MemoryVisualization(right_frame, self.fs.memory_manager)
+    
+    def setup_left_frame(self, parent):
+        """Setup file explorer and command section"""
+        # File system info
+        info_frame = ttk.LabelFrame(parent, text="💽 Informasi File System")
+        info_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.fs_info = {
+            'path': tk.StringVar(value="/"),
+            'free': tk.StringVar(value="Kosong: 0 MB"),
+            'used': tk.StringVar(value="Terpakai: 0 MB"),
+            'total': tk.StringVar(value="Total: 0 MB"),
+            'files': tk.StringVar(value="File: 0"),
+            'dirs': tk.StringVar(value="Direktori: 0")
+        }
+        
+        # Current path
+        path_frame = ttk.Frame(info_frame)
+        path_frame.pack(fill='x', padx=5, pady=2)
+        ttk.Label(path_frame, text="Path:").grid(row=0, column=0, sticky='w', padx=2)
+        ttk.Entry(path_frame, textvariable=self.fs_info['path'], state="readonly").grid(row=0, column=1, sticky='ew', padx=2)
+        path_frame.columnconfigure(1, weight=1)
+        
+        # Storage info
+        storage_frame = ttk.Frame(info_frame)
+        storage_frame.pack(fill='x', padx=5, pady=2)
+        ttk.Label(storage_frame, textvariable=self.fs_info['free']).grid(row=0, column=0, sticky='w', padx=5)
+        ttk.Label(storage_frame, textvariable=self.fs_info['used']).grid(row=0, column=1, sticky='w', padx=5)
+        ttk.Label(storage_frame, textvariable=self.fs_info['total']).grid(row=0, column=2, sticky='w', padx=5)
+        
+        # Count info
+        count_frame = ttk.Frame(info_frame)
+        count_frame.pack(fill='x', padx=5, pady=2)
+        ttk.Label(count_frame, textvariable=self.fs_info['files']).grid(row=0, column=0, sticky='w', padx=5)
+        ttk.Label(count_frame, textvariable=self.fs_info['dirs']).grid(row=0, column=1, sticky='w', padx=5)
+        
+        # File explorer
+        explorer_frame = ttk.LabelFrame(parent, text="📂 File Explorer")
+        explorer_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Treeview
+        self.tree = ttk.Treeview(explorer_frame, columns=("type", "size", "address"))
+        self.tree.heading("#0", text="Name")
+        self.tree.heading("type", text="Type")
+        self.tree.heading("size", text="Size")
+        self.tree.heading("address", text="Address")
+        self.tree.column("#0", width=150)
+        self.tree.column("type", width=70)
+        self.tree.column("size", width=70)
+        self.tree.column("address", width=70)
+        self.tree.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Command frame
+        cmd_frame = ttk.LabelFrame(parent, text="💻 Command")
+        cmd_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Command entry
+        cmd_entry_frame = ttk.Frame(cmd_frame)
+        cmd_entry_frame.pack(fill='x', padx=5, pady=5)
+        ttk.Label(cmd_entry_frame, text="$").grid(row=0, column=0, sticky='w', padx=2)
+        self.cmd_entry = ttk.Entry(cmd_entry_frame)
+        self.cmd_entry.grid(row=0, column=1, sticky='ew', padx=2)
+        self.cmd_entry.bind("<Return>", self.execute_command)
+        cmd_entry_frame.columnconfigure(1, weight=1)
+        
+        # Command buttons
+        btn_frame = ttk.Frame(cmd_frame)
+        btn_frame.pack(fill='x', padx=5, pady=5)
+        
+        common_cmds = [
+            ("ls", self.cmd_ls),
+            ("pwd", self.cmd_pwd),
+            ("cd", self.cmd_cd),
+            ("mkdir", self.cmd_mkdir),
+            ("touch", self.cmd_touch),
+            ("rm", self.cmd_rm)
+        ]
+        
+        for i, (cmd, callback) in enumerate(common_cmds):
+            ttk.Button(btn_frame, text=cmd, command=callback).grid(row=0, column=i, padx=2)
+        
+        # Output/history
+        history_frame = ttk.LabelFrame(parent, text="📜 Output")
+        history_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.output_text = scrolledtext.ScrolledText(history_frame, wrap=tk.WORD, height=6, font=self.mono_font)
+        self.output_text.pack(fill='x', padx=5, pady=5)
     
     def execute_command(self, event=None):
-        """Execute command from entry"""
-        command = self.command_entry.get().strip()
+        """Execute user command"""
+        command = self.cmd_entry.get().strip()
         if not command:
             return
         
-        # Clear entry
-        self.command_entry.delete(0, tk.END)
+        self.output_text.insert(tk.END, f"$ {command}\n")
         
-        # Show command in terminal
-        self.write_terminal(f"{self.prompt_label.cget('text')}{command}", 'command')
-        
-        # Parse and execute command
-        try:
-            self.process_command(command)
-        except Exception as e:
-            self.write_terminal(f"Error: {str(e)}", 'error')
-        
-        # Update display
-        self.update_display()
-    
-    def process_command(self, command: str):
-        """Process and execute file system commands"""
+        # Parse command
         parts = command.split()
-        if not parts:
-            return
-        
-        cmd = parts[0].lower()
+        cmd = parts[0]
         args = parts[1:]
         
-        if cmd == 'help':
-            self.show_help()
-        elif cmd == 'pwd':
-            self.write_terminal(self.fs.pwd())
-        elif cmd == 'ls':
-            path = args[0] if args else ''
-            self.show_ls_output(path)
-        elif cmd == 'mkdir':
-            if not args:
-                self.write_terminal("mkdir: missing operand", 'error')
-            else:
-                self.fs.mkdir(args[0])
-                self.write_terminal(f"Directory '{args[0]}' created", 'success')
-        elif cmd == 'rmdir':
-            if not args:
-                self.write_terminal("rmdir: missing operand", 'error')
-            else:
-                self.fs.rmdir(args[0])
-                self.write_terminal(f"Directory '{args[0]}' removed", 'success')
-        elif cmd == 'touch':
-            if not args:
-                self.write_terminal("touch: missing operand", 'error')
-            else:
-                self.fs.touch(args[0])
-                self.write_terminal(f"File '{args[0]}' created/updated", 'success')
-        elif cmd == 'rm':
-            if not args:
-                self.write_terminal("rm: missing operand", 'error')
-            else:
-                self.handle_rm_command(args)
-        elif cmd == 'cd':
-            path = args[0] if args else '/'
-            self.fs.cd(path)
-            self.write_terminal(f"Changed to directory: {self.fs.get_current_path()}", 'success')
-            self.update_prompt()
-        elif cmd == 'cp':
-            if len(args) < 2:
-                self.write_terminal("cp: missing destination operand", 'error')
-            else:
-                self.fs.cp(args[0], args[1])
-                self.write_terminal(f"'{args[0]}' copied to '{args[1]}'", 'success')
-        elif cmd == 'mv':
-            if len(args) < 2:
-                self.write_terminal("mv: missing destination operand", 'error')
-            else:
-                self.fs.mv(args[0], args[1])
-                self.write_terminal(f"'{args[0]}' moved to '{args[1]}'", 'success')
-        elif cmd == 'tree':
-            self.show_tree()
-        elif cmd == 'df':
-            self.show_disk_usage()
-        elif cmd == 'du':
-            path = args[0] if args else ''
-            self.show_directory_usage(path)
-        elif cmd == 'history':
-            self.show_command_history()
-        elif cmd == 'clear':
-            self.clear_terminal()
-        elif cmd == 'reset':
-            self.reset_system()
-        elif cmd == 'exit' or cmd == 'quit':
-            self.root.quit()
-        else:
-            self.write_terminal(f"Command '{cmd}' not found. Type 'help' for available commands.", 'error')
-    
-    def handle_rm_command(self, args: List[str]):
-        """Handle rm command with different options"""
-        if not args:
-            self.write_terminal("rm: missing operand", 'error')
-            return
-        
-        # Check for options
-        recursive = False
-        force = False
-        files_to_remove = []
-        
-        for arg in args:
-            if arg.startswith('-'):
-                if 'r' in arg or 'R' in arg:
-                    recursive = True
-                if 'f' in arg:
-                    force = True
-            else:
-                files_to_remove.append(arg)
-        
-        if not files_to_remove:
-            self.write_terminal("rm: missing file operand", 'error')
-            return
-        
-        # Process each file/directory
-        for filename in files_to_remove:
-            try:
-                if recursive:
-                    # Use rm_recursive for directories
-                    success = self.fs.rm_recursive(filename, force)
-                    if success:
-                        self.write_terminal(f"'{filename}' removed recursively", 'success')
+        try:
+            if cmd == "ls":
+                self.exec_ls(" ".join(args) if args else "")
+            elif cmd == "cd":
+                self.fs.cd(" ".join(args) if args else "/")
+            elif cmd == "pwd":
+                self.output_text.insert(tk.END, f"{self.fs.pwd()}\n")
+            elif cmd == "mkdir":
+                if not args:
+                    self.output_text.insert(tk.END, "Error: Missing directory name\n")
                 else:
-                    # Use regular rm for files only
-                    self.fs.rm(filename)
-                    self.write_terminal(f"File '{filename}' removed", 'success')
-                    
-            except FileNotFoundError as e:
-                if not force:
-                    self.write_terminal(f"rm: {str(e)}", 'error')
-            except IsADirectoryError as e:
-                self.write_terminal(f"rm: {str(e)}", 'error')
-                self.write_terminal("Hint: Use 'rm -r' to remove directories", 'warning')
-            except OSError as e:
-                self.write_terminal(f"rm: {str(e)}", 'error')
-            except Exception as e:
-                self.write_terminal(f"rm: {str(e)}", 'error')
-    
-    def show_help(self):
-        """Show help information"""
-        help_text = """
-Available Commands:
-==================
-File Operations:
-  touch <filename>     - Create a new file or update timestamp
-  rm <filename>        - Remove a file
-  rm -r <name>         - Remove file or directory recursively
-  rm -rf <name>        - Remove file or directory recursively (force)
-  rm -f <filename>     - Remove file forcefully (no error if not exists)
-  cp <source> <dest>   - Copy file or directory
-  mv <source> <dest>   - Move/rename file or directory
-
-Directory Operations:
-  mkdir <dirname>      - Create a new directory
-  rmdir <dirname>      - Remove empty directory
-  cd <path>           - Change directory (cd .. for parent, cd / for root)
-  pwd                 - Show current directory path
-  ls [path]           - List directory contents
-
-System Information:
-  tree                - Show directory tree structure
-  df                  - Show disk usage information
-  du [path]           - Show directory size
-  history             - Show command history
-
-Utility Commands:
-  help                - Show this help message
-  clear               - Clear terminal screen
-  reset               - Reset file system to initial state
-  exit/quit           - Exit the application
-
-Examples:
-  mkdir documents
-  cd documents
-  touch readme.txt
-  mkdir subfolder
-  touch subfolder/file.txt
-  ls
-  rm -r subfolder
-  cd ..
-  tree
-        """
-        self.write_terminal(help_text.strip(), 'info')
-    
-    def show_ls_output(self, path: str = ''):
-        """Show ls command output"""
-        try:
-            files = self.fs.ls(path)
-            if not files:
-                self.write_terminal("Directory is empty")
+                    self.fs.mkdir(args[0])
+            elif cmd == "touch":
+                if not args:
+                    self.output_text.insert(tk.END, "Error: Missing file name\n")
+                else:
+                    self.fs.touch(args[0])
+            elif cmd == "rm":
+                if not args:
+                    self.output_text.insert(tk.END, "Error: Missing file name\n")
+                    return
+                
+                force = "-f" in args
+                recursive = "-r" in args or "-rf" in args or "-fr" in args
+                
+                # Filter out flags
+                file_args = [arg for arg in args if not arg.startswith("-")]
+                
+                if not file_args:
+                    self.output_text.insert(tk.END, "Error: Missing file name\n")
+                    return
+                
+                if recursive:
+                    self.fs.rm_recursive(file_args[0], force)
+                else:
+                    self.fs.rm(file_args[0])
+            elif cmd == "rmdir":
+                if not args:
+                    self.output_text.insert(tk.END, "Error: Missing directory name\n")
+                else:
+                    self.fs.rmdir(args[0])
+            elif cmd == "cp":
+                if len(args) < 2:
+                    self.output_text.insert(tk.END, "Error: cp requires source and destination\n")
+                else:
+                    self.fs.cp(args[0], args[1])
+            elif cmd == "mv":
+                if len(args) < 2:
+                    self.output_text.insert(tk.END, "Error: mv requires source and destination\n")
+                else:
+                    self.fs.mv(args[0], args[1])
+            elif cmd == "clear":
+                self.output_text.delete(1.0, tk.END)
                 return
-            
-            # Format output like Unix ls -l
-            self.write_terminal("total " + str(len(files)))
-            for file_info in files:
-                permissions = file_info['permissions']
-                size = str(file_info['size']) + " MB" if file_info['type'] == 'file' else str(file_info['size']) + " MB"
-                modified = file_info['modified']
-                name = file_info['name']
-                
-                # Add icon based on type
-                icon = "📁" if file_info['type'] == 'directory' else "📄"
-                
-                line = f"{permissions} {size:>8} {modified} {icon} {name}"
-                self.write_terminal(line)
-                
-        except Exception as e:
-            self.write_terminal(f"ls: {str(e)}", 'error')
-    
-    def show_tree(self):
-        """Show tree structure"""
-        tree_data = self.fs.get_tree_structure()
-        for item in tree_data:
-            self.write_terminal(item['display'])
-    
-    def show_disk_usage(self):
-        """Show disk usage information"""
-        usage = self.fs.get_disk_usage()
-        self.write_terminal("Disk Usage Information:", 'info')
-        self.write_terminal(f"Total Storage: {usage['total']} MB")
-        self.write_terminal(f"Used Storage:  {usage['used']} MB")
-        self.write_terminal(f"Free Storage:  {usage['free']} MB")
-        self.write_terminal(f"Usage:         {usage['usage_percent']:.1f}%")
-        
-        # Visual bar
-        bar_length = 50
-        used_bars = int((usage['usage_percent'] / 100) * bar_length)
-        free_bars = bar_length - used_bars
-        bar = "█" * used_bars + "░" * free_bars
-        self.write_terminal(f"[{bar}] {usage['usage_percent']:.1f}%")
-    
-    def show_directory_usage(self, path: str = ''):
-        """Show directory usage"""
-        try:
-            size = self.fs.get_directory_size(path)
-            dir_path = path or self.fs.get_current_path()
-            self.write_terminal(f"Directory '{dir_path}' size: {size} MB")
-        except Exception as e:
-            self.write_terminal(f"du: {str(e)}", 'error')
-    
-    def show_command_history(self):
-        """Show command history"""
-        history = self.fs.get_command_history()
-        if not history:
-            self.write_terminal("No commands in history")
-            return
-        
-        self.write_terminal("Command History:", 'info')
-        for i, cmd in enumerate(history, 1):
-            self.write_terminal(f"{i:3d}  {cmd}")
-    
-    def clear_terminal(self):
-        """Clear terminal output"""
-        self.terminal_output.configure(state='normal')
-        self.terminal_output.delete('1.0', tk.END)
-        self.terminal_output.configure(state='disabled')
-    
-    def reset_system(self):
-        """Reset file system"""
-        if messagebox.askyesno("Reset System", "Are you sure you want to reset the file system? All data will be lost."):
-            self.fs.reset()
-            self.clear_terminal()
-            self.write_terminal("System reset successfully", 'success')
-            self.write_terminal(f"Current directory: {self.fs.get_current_path()}")
-            self.update_prompt()
-            self.update_display()
-    
-    def update_prompt(self):
-        """Update command prompt with current directory"""
-        current_path = self.fs.get_current_path()
-        if current_path == '/':
-            prompt = "root@simulator:/$ "
-        else:
-            # Show only the last directory name if path is long
-            parts = current_path.strip('/').split('/')
-            if len(parts) > 2:
-                display_path = f".../{'/'.join(parts[-2:])}"
             else:
-                display_path = current_path
-            prompt = f"root@simulator:{display_path}$ "
+                self.output_text.insert(tk.END, f"Error: Unknown command '{cmd}'\n")
+                return
+        except Exception as e:
+            self.output_text.insert(tk.END, f"Error: {str(e)}\n")
         
-        self.prompt_label.configure(text=prompt)
+        # Refresh UI
+        self.refresh_ui()
+        
+        # Clear command entry
+        self.cmd_entry.delete(0, tk.END)
+        
+        # Auto-scroll to bottom
+        self.output_text.see(tk.END)
     
-    def update_display(self):
-        """Update all display elements"""
-        self.update_system_info()
-        self.update_file_list()
-        self.update_directory_tree()
+    def refresh_ui(self):
+        """Refresh the entire UI"""
+        # Update file system info
+        self.fs_info['path'].set(self.fs.get_current_path())
+        self.fs_info['free'].set(f"Kosong: {self.fs.get_free_storage()} MB")
+        self.fs_info['used'].set(f"Terpakai: {self.fs.get_used_storage()} MB")
+        self.fs_info['total'].set(f"Total: {self.fs.memory_manager.total_size} MB")
+        self.fs_info['files'].set(f"File: {self.fs.count_files()}")
+        self.fs_info['dirs'].set(f"Direktori: {self.fs.count_directories()}")
+        
+        # Update file explorer
+        self.update_file_explorer()
+        
+        # Update memory visualization
+        self.memory_viz.update_visualization()
     
-    def update_system_info(self):
-        """Update system information display"""
-        # Clear existing info
-        for widget in self.sys_info_frame.winfo_children():
-            widget.destroy()
+    def update_file_explorer(self):
+        """Update file explorer tree"""
+        self.tree.delete(*self.tree.get_children())
         
-        # Get system stats
-        usage = self.fs.get_disk_usage()
-        file_count = self.fs.count_files()
-        dir_count = self.fs.count_directories()
-        current_path = self.fs.get_current_path()
-        
-        # Create info labels
-        info_data = [
-            ("Current Directory:", current_path),
-            ("Total Files:", str(file_count)),
-            ("Total Directories:", str(dir_count)),
-            ("Used Storage:", f"{usage['used']} MB"),
-            ("Free Storage:", f"{usage['free']} MB"),
-            ("Storage Usage:", f"{usage['usage_percent']:.1f}%")
-        ]
-        
-        for i, (label, value) in enumerate(info_data):
-            row = i // 2
-            col = i % 2
-            
-            frame = ttk.Frame(self.sys_info_frame, style='Secondary.TFrame')
-            frame.grid(row=row, column=col, sticky='w', padx=10, pady=2)
-            
-            ttk.Label(frame, text=label, style='Info.TLabel', 
-                     font=('Arial', 9, 'bold')).pack(side='left')
-            ttk.Label(frame, text=value, style='Info.TLabel',
-                     font=('Arial', 9)).pack(side='left', padx=(5, 0))
-    
-    def update_file_list(self):
-        """Update file list treeview"""
-        # Clear existing items
-        for item in self.file_tree.get_children():
-            self.file_tree.delete(item)
-        
-        # Get current directory contents
         try:
-            files = self.fs.ls()
-            for file_info in files:
-                icon = "📁" if file_info['type'] == 'directory' else "📄"
-                size_str = f"{file_info['size']} MB" if file_info['type'] == 'file' else f"({file_info['size']} MB)"
+            items = self.fs.ls()
+            for item in items:
+                icon = "🗂️ " if item['type'] == 'directory' else "📄 "
+                size_str = f"{item['size']} MB" if item['type'] == 'file' else ""
+                address_str = f"@{item['memory_address']}" if item['memory_address'] is not None else ""
                 
-                self.file_tree.insert('', 'end', text=icon, values=(
-                    file_info['name'],
-                    file_info['type'].capitalize(),
-                    size_str,
-                    file_info['modified']
-                ))
+                self.tree.insert(
+                    "", tk.END, text=icon + item['name'],
+                    values=(item['type'], size_str, address_str)
+                )
         except Exception as e:
-            pass  # Directory might be empty or inaccessible
+            messagebox.showerror("Error", str(e))
     
-    def update_directory_tree(self):
-        """Update directory tree display"""
-        self.dir_tree_text.configure(state='normal')
-        self.dir_tree_text.delete('1.0', tk.END)
-        
+    def exec_ls(self, path):
+        """Execute ls command and show output"""
         try:
-            tree_data = self.fs.get_tree_structure()
-            for item in tree_data:
-                self.dir_tree_text.insert(tk.END, item['display'] + '\n')
+            items = self.fs.ls(path)
+            for item in items:
+                icon = "📁" if item['type'] == 'directory' else "📄"
+                size_str = f"{item['size']} MB" if item['type'] == 'file' else "DIR"
+                address_str = f"@{item['memory_address']}" if item['memory_address'] is not None else ""
+                
+                self.output_text.insert(tk.END, f"{icon} {item['name']:<20} {size_str:<10} {address_str}\n")
         except Exception as e:
-            self.dir_tree_text.insert(tk.END, f"Error: {str(e)}\n")
-        
-        self.dir_tree_text.configure(state='disabled')
+            self.output_text.insert(tk.END, f"Error: {str(e)}\n")
     
-    def run(self):
-        """Run the GUI application"""
-        try:
-            self.root.mainloop()
-        except KeyboardInterrupt:
-            print("\nApplication terminated by user")
-        except Exception as e:
-            print(f"Application error: {str(e)}")
-        finally:
-            try:
-                self.root.destroy()
-            except:
-                pass
+    def cmd_ls(self):
+        """Command button for ls"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "ls")
+        self.execute_command()
+    
+    def cmd_pwd(self):
+        """Command button for pwd"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "pwd")
+        self.execute_command()
+    
+    def cmd_cd(self):
+        """Command button for cd"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "cd ")
+        self.cmd_entry.focus()
+        self.cmd_entry.icursor(tk.END)
+    
+    def cmd_mkdir(self):
+        """Command button for mkdir"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "mkdir ")
+        self.cmd_entry.focus()
+        self.cmd_entry.icursor(tk.END)
+    
+    def cmd_touch(self):
+        """Command button for touch"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "touch ")
+        self.cmd_entry.focus()
+        self.cmd_entry.icursor(tk.END)
+    
+    def cmd_rm(self):
+        """Command button for rm"""
+        self.cmd_entry.delete(0, tk.END)
+        self.cmd_entry.insert(0, "rm ")
+        self.cmd_entry.focus()
+        self.cmd_entry.icursor(tk.END)
+    
+    def reset_file_system(self):
+        """Reset file system"""
+        if messagebox.askokcancel("Reset File System", "Are you sure you want to reset the file system? All data will be lost."):
+            self.fs.reset()
+            self.output_text.delete(1.0, tk.END)
+            self.output_text.insert(tk.END, "File system reset.\n")
+            self.refresh_ui()
+    
+    def show_about(self):
+        """Show about dialog"""
+        messagebox.showinfo(
+            "About File System Simulator",
+            "File System Simulator with First Fit Memory Allocation\n\n"
+            "Visualisasi algoritma alokasi memori First Fit untuk simulasi file system.\n\n"
+            "© 2025"
+        )
+
+# Fungsi main untuk menjalankan aplikasi
+def main():
+    root = tk.Tk()
+    app = FileSystemGUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
